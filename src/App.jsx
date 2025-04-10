@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { init } from '@telegram-apps/sdk';
-import { TonConnectButton, useTonConnectUI } from '@tonconnect/ui-react';
 import './App.css';
 
 function App() {
   const [user, setUser] = useState(null);
   const [isTelegram, setIsTelegram] = useState(false);
   const [error, setError] = useState(null);
-  const [tonConnectUI, setTonConnectUI] = useState(null);
+  const [gameState, setGameState] = useState(null);
+  const [playerChoice, setPlayerChoice] = useState(null);
+  const [computerChoice, setComputerChoice] = useState(null);
+  const [result, setResult] = useState(null);
 
   useEffect(() => {
     console.log('App component mounted');
@@ -34,23 +36,42 @@ function App() {
       console.log('Running outside Telegram');
       setUser({ first_name: 'Гость' });
     }
-
-    // Проверяем TON Connect
-    try {
-      const ui = useTonConnectUI();
-      setTonConnectUI(ui[0]);
-    } catch (error) {
-      console.error('Ошибка инициализации TON Connect:', error);
-      setError('Ошибка инициализации TON Connect');
-    }
   }, []);
 
   const handlePlay = () => {
-    alert('Переход к игре...');
+    setGameState('playing');
+    setResult(null);
   };
 
   const handleFriends = () => {
     alert('Переход к списку друзей...');
+  };
+
+  const handleChoice = (choice) => {
+    setPlayerChoice(choice);
+    const choices = ['камень', 'ножницы', 'бумага'];
+    const computer = choices[Math.floor(Math.random() * 3)];
+    setComputerChoice(computer);
+
+    // Определяем победителя
+    if (choice === computer) {
+      setResult('Ничья!');
+    } else if (
+      (choice === 'камень' && computer === 'ножницы') ||
+      (choice === 'ножницы' && computer === 'бумага') ||
+      (choice === 'бумага' && computer === 'камень')
+    ) {
+      setResult('Ты победил!');
+    } else {
+      setResult('Компьютер победил!');
+    }
+  };
+
+  const handleBack = () => {
+    setGameState(null);
+    setPlayerChoice(null);
+    setComputerChoice(null);
+    setResult(null);
   };
 
   if (error) {
@@ -68,13 +89,30 @@ function App() {
       ) : (
         <div className="welcome">Загрузка...</div>
       )}
-      <div className="ton-connect-button">
-        {tonConnectUI ? <TonConnectButton /> : <p>TON Connect недоступен</p>}
-      </div>
-      <div className="button-group">
-        <button onClick={handlePlay}>Играть</button>
-        <button onClick={handleFriends}>Друзья</button>
-      </div>
+
+      {gameState === 'playing' ? (
+        <div className="game">
+          <h2>Камень-Ножницы-Бумага</h2>
+          <div className="choices">
+            <button onClick={() => handleChoice('камень')}>Камень</button>
+            <button onClick={() => handleChoice('ножницы')}>Ножницы</button>
+            <button onClick={() => handleChoice('бумага')}>Бумага</button>
+          </div>
+          {playerChoice && computerChoice && (
+            <div className="result">
+              <p>Твой выбор: {playerChoice}</p>
+              <p>Выбор компьютера: {computerChoice}</p>
+              <p>{result}</p>
+              <button onClick={handleBack}>Назад</button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="button-group">
+          <button onClick={handlePlay}>Играть</button>
+          <button onClick={handleFriends}>Друзья</button>
+        </div>
+      )}
     </div>
   );
 }
