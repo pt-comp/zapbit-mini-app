@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { init } from '@telegram-apps/sdk';
 import './App.css';
 
+// Исправляем имена файлов в импорте
+import rockImage from './assets/rockimage.png';
+import scissorsImage from './assets/scissorsimage.png';
+import paperImage from './assets/paperimage.png';
+
 function App() {
   const [user, setUser] = useState(null);
   const [isTelegram, setIsTelegram] = useState(false);
@@ -17,9 +22,18 @@ function App() {
   const [friendIdInput, setFriendIdInput] = useState('');
   const [selectedFriend, setSelectedFriend] = useState(null);
   const [friendChoice, setFriendChoice] = useState(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [activeWindow, setActiveWindow] = useState(null);
+  const [newNickname, setNewNickname] = useState('');
 
   useEffect(() => {
     console.log('App component mounted');
+
+    // Загружаем друзей из localStorage
+    const savedFriends = localStorage.getItem('friends');
+    if (savedFriends) {
+      setFriends(JSON.parse(savedFriends));
+    }
 
     // Проверяем, есть ли сохраненные данные в localStorage
     const savedNickname = localStorage.getItem('nickname');
@@ -43,7 +57,6 @@ function App() {
         console.log('Telegram initData:', initData);
 
         if (!savedNickname || !savedUserId) {
-          // Если ник и ID не сохранены, используем данные Telegram
           const telegramUser = initData.user;
           const generatedId = `id_${telegramUser.id}_${Math.random().toString(36).substr(2, 9)}`;
           setNickname(telegramUser.first_name);
@@ -82,11 +95,7 @@ function App() {
     setGameState('playing');
     setResult(null);
     setSelectedFriend(null);
-  };
-
-  const handleFriends = () => {
-    setGameState('friends');
-    setResult(null);
+    setActiveWindow(null);
   };
 
   const handleChoice = (choice, isFriend = false) => {
@@ -98,12 +107,10 @@ function App() {
     } else {
       setPlayerChoice(choice);
       if (selectedFriend) {
-        // Если играем против друга, ждем его выбор
         if (friendChoice) {
           determineWinner(choice, friendChoice);
         }
       } else {
-        // Игра против компьютера
         const choices = ['камень', 'ножницы', 'бумага'];
         const computer = choices[Math.floor(Math.random() * 3)];
         setComputerChoice(computer);
@@ -137,10 +144,9 @@ function App() {
 
   const handleAddFriend = () => {
     if (friendIdInput && friendIdInput !== userId) {
-      // Для простоты будем хранить друзей в localStorage
       const newFriend = {
         id: friendIdInput,
-        nickname: `Friend_${friendIdInput.slice(-4)}`, // Для примера, в реальном приложении нужно получать ник по ID
+        nickname: `Friend_${friendIdInput.slice(-4)}`,
       };
       const updatedFriends = [...friends, newFriend];
       setFriends(updatedFriends);
@@ -157,6 +163,28 @@ function App() {
     setPlayerChoice(null);
     setFriendChoice(null);
     setResult(null);
+    setActiveWindow(null);
+  };
+
+  const handleMenuClick = () => {
+    setShowMenu(!showMenu);
+  };
+
+  const handleMenuOption = (option) => {
+    setActiveWindow(option);
+    setShowMenu(false);
+    setGameState(null);
+  };
+
+  const handleNicknameChange = () => {
+    if (newNickname.trim()) {
+      setNickname(newNickname);
+      localStorage.setItem('nickname', newNickname);
+      setNewNickname('');
+      setActiveWindow(null);
+    } else {
+      alert('Введите корректный никнейм!');
+    }
   };
 
   if (error) {
@@ -164,13 +192,24 @@ function App() {
   }
 
   return (
-    <div className="container">
-      <div className="header">
-        <h1>ZapBit</h1>
+    <div className="app-wrapper">
+      <div className="navbar">
+        <div className="menu" onClick={handleMenuClick}>
+          <span>☰</span>
+        </div>
+        <h1 className="logo">ZapBit</h1>
         <div className="profile" onClick={() => setShowProfileModal(!showProfileModal)}>
           <span>{nickname || 'Гость'}</span>
         </div>
       </div>
+
+      {showMenu && (
+        <div className="menu-modal">
+          <button onClick={() => handleMenuOption('friends')}>Друзья</button>
+          <button onClick={() => handleMenuOption('nickname')}>Никнейм</button>
+          <button onClick={() => handleMenuOption('settings')}>Настройки</button>
+        </div>
+      )}
 
       {showProfileModal && (
         <div className="profile-modal">
@@ -181,96 +220,139 @@ function App() {
         </div>
       )}
 
-      {user ? (
-        <div>
-          <div className="welcome">Привет, {user.first_name}!</div>
-          <div className="welcome">Запускай...</div>
-        </div>
-      ) : (
-        <div className="welcome">Загрузка...</div>
-      )}
-
-      {gameState === 'playing' ? (
-        <div className="game">
-          <h2>Камень-Ножницы-Бумага</h2>
-          {selectedFriend ? (
-            <div>
-              <p>Игра против {selectedFriend.nickname}</p>
-              <div className="choices">
-                <button onClick={() => handleChoice('камень')}>Камень</button>
-                <button onClick={() => handleChoice('ножницы')}>Ножницы</button>
-                <button onClick={() => handleChoice('бумага')}>Бумага</button>
-              </div>
-              {friendChoice ? (
-                <p>{selectedFriend.nickname} выбрал: {friendChoice}</p>
+      <div className="main-content">
+        {activeWindow === 'friends' ? (
+          <div className="window friends-window">
+            <h2>Друзья</h2>
+            <div className="add-friend">
+              <input
+                type="text"
+                placeholder="Введите ID друга"
+                value={friendIdInput}
+                onChange={(e) => setFriendIdInput(e.target.value)}
+              />
+              <button onClick={handleAddFriend}>Добавить</button>
+            </div>
+            <div className="friends-list">
+              {friends.length > 0 ? (
+                friends.map((friend) => (
+                  <div key={friend.id} className="friend-item">
+                    <span>{friend.nickname} (ID: {friend.id})</span>
+                    <button onClick={() => handlePlayWithFriend(friend)}>Играть</button>
+                  </div>
+                ))
               ) : (
-                <p>Ожидаем выбор {selectedFriend.nickname}...</p>
-              )}
-              {playerChoice && !friendChoice && (
-                <div className="friend-choices">
-                  <p>Выберите за {selectedFriend.nickname}:</p>
-                  <button onClick={() => handleChoice('камень', true)}>Камень</button>
-                  <button onClick={() => handleChoice('ножницы', true)}>Ножницы</button>
-                  <button onClick={() => handleChoice('бумага', true)}>Бумага</button>
-                </div>
+                <p>У вас пока нет друзей.</p>
               )}
             </div>
-          ) : (
-            <div className="choices">
-              <button onClick={() => handleChoice('камень')}>Камень</button>
-              <button onClick={() => handleChoice('ножницы')}>Ножницы</button>
-              <button onClick={() => handleChoice('бумага')}>Бумага</button>
-            </div>
-          )}
-          {playerChoice && computerChoice && !selectedFriend && (
-            <div className="result">
-              <p>Твой выбор: {playerChoice}</p>
-              <p>Выбор компьютера: {computerChoice}</p>
-              <p>{result}</p>
-              <button onClick={handleBack}>Назад</button>
-            </div>
-          )}
-          {playerChoice && friendChoice && selectedFriend && (
-            <div className="result">
-              <p>Твой выбор: {playerChoice}</p>
-              <p>Выбор {selectedFriend.nickname}: {friendChoice}</p>
-              <p>{result}</p>
-              <button onClick={handleBack}>Назад</button>
-            </div>
-          )}
-        </div>
-      ) : gameState === 'friends' ? (
-        <div className="friends">
-          <h2>Друзья</h2>
-          <div className="add-friend">
+            <button onClick={() => setActiveWindow(null)}>Закрыть</button>
+          </div>
+        ) : activeWindow === 'nickname' ? (
+          <div className="window nickname-window">
+            <h2>Изменить никнейм</h2>
             <input
               type="text"
-              placeholder="Введите ID друга"
-              value={friendIdInput}
-              onChange={(e) => setFriendIdInput(e.target.value)}
+              placeholder="Введите новый никнейм"
+              value={newNickname}
+              onChange={(e) => setNewNickname(e.target.value)}
             />
-            <button onClick={handleAddFriend}>Добавить</button>
+            <button onClick={handleNicknameChange}>Сохранить</button>
+            <button onClick={() => setActiveWindow(null)}>Закрыть</button>
           </div>
-          <div className="friends-list">
-            {friends.length > 0 ? (
-              friends.map((friend) => (
-                <div key={friend.id} className="friend-item">
-                  <span>{friend.nickname} (ID: {friend.id})</span>
-                  <button onClick={() => handlePlayWithFriend(friend)}>Играть</button>
+        ) : activeWindow === 'settings' ? (
+          <div className="window settings-window">
+            <h2>Настройки</h2>
+            <p>Здесь будут настройки (в разработке).</p>
+            <button onClick={() => setActiveWindow(null)}>Закрыть</button>
+          </div>
+        ) : gameState === 'playing' ? (
+          <div className="game">
+            <h2>Камень-Ножницы-Бумага</h2>
+            {selectedFriend ? (
+              <div>
+                <p>Игра против {selectedFriend.nickname}</p>
+                <div className="choices">
+                  <button onClick={() => handleChoice('камень')}>
+                    <img src={rockImage} alt="Камень" />
+                  </button>
+                  <button onClick={() => handleChoice('ножницы')}>
+                    <img src={scissorsImage} alt="Ножницы" />
+                  </button>
+                  <button onClick={() => handleChoice('бумага')}>
+                    <img src={paperImage} alt="Бумага" />
+                  </button>
                 </div>
-              ))
+                {friendChoice ? (
+                  <p>{selectedFriend.nickname} выбрал: {friendChoice}</p>
+                ) : (
+                  <p>Ожидаем выбор {selectedFriend.nickname}...</p>
+                )}
+                {playerChoice && !friendChoice && (
+                  <div className="friend-choices">
+                    <p>Выберите за {selectedFriend.nickname}:</p>
+                    <button onClick={() => handleChoice('камень', true)}>
+                      <img src={rockImage} alt="Камень" />
+                    </button>
+                    <button onClick={() => handleChoice('ножницы', true)}>
+                      <img src={scissorsImage} alt="Ножницы" />
+                    </button>
+                    <button onClick={() => handleChoice('бумага', true)}>
+                      <img src={paperImage} alt="Бумага" />
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
-              <p>У вас пока нет друзей.</p>
+              <div className="choices">
+                <button onClick={() => handleChoice('камень')}>
+                  <img src={rockImage} alt="Камень" />
+                </button>
+                <button onClick={() => handleChoice('ножницы')}>
+                  <img src={scissorsImage} alt="Ножницы" />
+                </button>
+                <button onClick={() => handleChoice('бумага')}>
+                  <img src={paperImage} alt="Бумага" />
+                </button>
+              </div>
+            )}
+            {playerChoice && computerChoice && !selectedFriend && (
+              <div className="result">
+                <p>Твой выбор: {playerChoice}</p>
+                <p>Выбор компьютера: {computerChoice}</p>
+                <p>{result}</p>
+                <button onClick={handleBack}>Назад</button>
+              </div>
+            )}
+            {playerChoice && friendChoice && selectedFriend && (
+              <div className="result">
+                <p>Твой выбор: {playerChoice}</p>
+                <p>Выбор {selectedFriend.nickname}: {friendChoice}</p>
+                <p>{result}</p>
+                <button onClick={handleBack}>Назад</button>
+              </div>
             )}
           </div>
-          <button onClick={handleBack}>Назад</button>
-        </div>
-      ) : (
-        <div className="button-group">
-          <button onClick={handlePlay}>Играть</button>
-          <button onClick={handleFriends}>Друзья</button>
-        </div>
-      )}
+        ) : (
+          <div className="welcome-section">
+            {user ? (
+              <div>
+                <div className="welcome">Привет, {nickname}!</div>
+                <div className="welcome">Запускай...</div>
+              </div>
+            ) : (
+              <div className="welcome">Загрузка...</div>
+            )}
+            <div className="button-group">
+              <button onClick={handlePlay}>Играть</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="footer">
+        <p>Связаться с нами: <a href="mailto:support@zapbit.com">support@zapbit.com</a></p>
+        <p>© 2025 ZapBit. Все права защищены.</p>
+      </div>
     </div>
   );
 }
