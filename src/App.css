@@ -21,6 +21,7 @@ body {
   background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
   padding: 10px 20px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  position: relative; /* Добавляем relative для позиционирования логотипа */
 }
 
 .logo {
@@ -28,6 +29,9 @@ body {
   font-size: 24px;
   font-weight: bold;
   margin: 0;
+  position: absolute; /* Центрируем логотип */
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .menu {
@@ -42,12 +46,17 @@ body {
   color: var(--tg-theme-button-text-color, #ffffff);
   border-radius: 20px;
   transition: background-color 0.3s ease;
+  max-width: 150px; /* Ограничиваем ширину профиля */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile:hover {
   background-color: var(--tg-theme-button-color, #006b9e);
 }
 
+/* Остальные стили остаются без изменений */
 .menu-modal {
   position: absolute;
   top: 60px;

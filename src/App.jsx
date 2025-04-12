@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { init } from '@telegram-apps/sdk';
 import './App.css';
+import { db, doc, setDoc, getDoc, updateDoc, arrayUnion, realtimeDb, ref, onValue, set } from './firebase';
 
-// Исправляем имена файлов в импорте
 import rockImage from './assets/rockimage.png';
 import scissorsImage from './assets/scissorsimage.png';
 import paperImage from './assets/paperimage.png';
@@ -25,70 +25,97 @@ function App() {
   const [showMenu, setShowMenu] = useState(false);
   const [activeWindow, setActiveWindow] = useState(null);
   const [newNickname, setNewNickname] = useState('');
+  const [partyId, setPartyId] = useState(null);
 
   useEffect(() => {
     console.log('App component mounted');
 
-    // Загружаем друзей из localStorage
-    const savedFriends = localStorage.getItem('friends');
-    if (savedFriends) {
-      setFriends(JSON.parse(savedFriends));
-    }
+    const initializeUser = async () => {
+      let savedNickname = localStorage.getItem('nickname');
+      let savedUserId = localStorage.getItem('userId');
 
-    // Проверяем, есть ли сохраненные данные в localStorage
-    const savedNickname = localStorage.getItem('nickname');
-    const savedUserId = localStorage.getItem('userId');
+      if (window.Telegram?.WebApp) {
+        console.log('Running inside Telegram');
+        try {
+          const tg = init();
+          tg.ready();
+          tg.expand();
+          setIsTelegram(true);
 
-    if (savedNickname && savedUserId) {
-      setNickname(savedNickname);
-      setUserId(savedUserId);
-    }
+          const initData = tg.initDataUnsafe;
+          console.log('Telegram initData:', initData);
 
-    // Проверяем, запущено ли приложение в Telegram
-    if (window.Telegram?.WebApp) {
-      console.log('Running inside Telegram');
-      try {
-        const tg = init();
-        tg.ready();
-        tg.expand();
-        setIsTelegram(true);
+          if (!savedNickname || !savedUserId) {
+            const telegramUser = initData.user;
+            savedUserId = `id_${telegramUser.id}_${Math.random().toString(36).substr(2, 9)}`;
+            savedNickname = telegramUser.first_name.slice(0, 9).replace(/[^a-zA-Z0-9]/g, '') || 'Guest';
+            localStorage.setItem('nickname', savedNickname);
+            localStorage.setItem('userId', savedUserId);
+          }
 
-        const initData = tg.initDataUnsafe;
-        console.log('Telegram initData:', initData);
+          setNickname(savedNickname);
+          setUserId(savedUserId);
+          setUser(initData.user);
 
-        if (!savedNickname || !savedUserId) {
-          const telegramUser = initData.user;
-          const generatedId = `id_${telegramUser.id}_${Math.random().toString(36).substr(2, 9)}`;
-          setNickname(telegramUser.first_name);
-          setUserId(generatedId);
-          localStorage.setItem('nickname', telegramUser.first_name);
-          localStorage.setItem('userId', generatedId);
+          // Регистрируем пользователя в Firestore
+          const userRef = doc(db, 'users', savedUserId);
+          await setDoc(userRef, {
+            nickname: savedNickname,
+            friends: [],
+          }, { merge: true });
+
+          // Загружаем список друзей из Firestore
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setFriends(userData.friends || []);
+          }
+        } catch (error) {
+          console.error('Ошибка инициализации Telegram:', error);
+          setError('Ошибка инициализации Telegram');
+          if (!savedNickname || !savedUserId) {
+            savedUserId = `id_guest_${Math.random().toString(36).substr(2, 9)}`;
+            savedNickname = 'Guest';
+            localStorage.setItem('nickname', savedNickname);
+            localStorage.setItem('userId', savedUserId);
+          }
+          setNickname(savedNickname);
+          setUserId(savedUserId);
+          setUser({ first_name: 'Гость' });
+
+          const userRef = doc(db, 'users', savedUserId);
+          await setDoc(userRef, {
+            nickname: savedNickname,
+            friends: [],
+          }, { merge: true });
         }
-
-        setUser(initData.user);
-      } catch (error) {
-        console.error('Ошибка инициализации Telegram:', error);
-        setError('Ошибка инициализации Telegram');
+      } else {
+        console.log('Running outside Telegram');
         if (!savedNickname || !savedUserId) {
-          const generatedId = `id_guest_${Math.random().toString(36).substr(2, 9)}`;
-          setNickname('Гость');
-          setUserId(generatedId);
-          localStorage.setItem('nickname', 'Гость');
-          localStorage.setItem('userId', generatedId);
+          savedUserId = `id_guest_${Math.random().toString(36).substr(2, 9)}`;
+          savedNickname = 'Guest';
+          localStorage.setItem('nickname', savedNickname);
+          localStorage.setItem('userId', savedUserId);
         }
+        setNickname(savedNickname);
+        setUserId(savedUserId);
         setUser({ first_name: 'Гость' });
+
+        const userRef = doc(db, 'users', savedUserId);
+        await setDoc(userRef, {
+          nickname: savedNickname,
+          friends: [],
+        }, { merge: true });
+
+        const userDoc = await getDoc(userRef);
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setFriends(userData.friends || []);
+        }
       }
-    } else {
-      console.log('Running outside Telegram');
-      if (!savedNickname || !savedUserId) {
-        const generatedId = `id_guest_${Math.random().toString(36).substr(2, 9)}`;
-        setNickname('Гость');
-        setUserId(generatedId);
-        localStorage.setItem('nickname', 'Гость');
-        localStorage.setItem('userId', generatedId);
-      }
-      setUser({ first_name: 'Гость' });
-    }
+    };
+
+    initializeUser();
   }, []);
 
   const handlePlay = () => {
@@ -96,20 +123,23 @@ function App() {
     setResult(null);
     setSelectedFriend(null);
     setActiveWindow(null);
+    setPartyId(null);
   };
 
-  const handleChoice = (choice, isFriend = false) => {
+  const handleChoice = async (choice, isFriend = false) => {
     if (isFriend) {
       setFriendChoice(choice);
       if (playerChoice) {
         determineWinner(playerChoice, choice);
+        // Очищаем пати после завершения игры
+        await set(ref(realtimeDb, `parties/${partyId}`), null);
+        setPartyId(null);
       }
     } else {
       setPlayerChoice(choice);
-      if (selectedFriend) {
-        if (friendChoice) {
-          determineWinner(choice, friendChoice);
-        }
+      if (selectedFriend && partyId) {
+        // Сохраняем выбор игрока в Realtime Database
+        await set(ref(realtimeDb, `parties/${partyId}/choices/${userId}`), choice);
       } else {
         const choices = ['камень', 'ножницы', 'бумага'];
         const computer = choices[Math.floor(Math.random() * 3)];
@@ -133,37 +163,91 @@ function App() {
     }
   };
 
-  const handleBack = () => {
+  const handleBack = async () => {
     setGameState(null);
     setPlayerChoice(null);
     setComputerChoice(null);
     setResult(null);
     setFriendChoice(null);
     setSelectedFriend(null);
+    if (partyId) {
+      // Очищаем пати при выходе
+      await set(ref(realtimeDb, `parties/${partyId}`), null);
+      setPartyId(null);
+    }
   };
 
-  const handleAddFriend = () => {
+  const handleAddFriend = async () => {
     if (friendIdInput && friendIdInput !== userId) {
-      const newFriend = {
-        id: friendIdInput,
-        nickname: `Friend_${friendIdInput.slice(-4)}`,
-      };
-      const updatedFriends = [...friends, newFriend];
-      setFriends(updatedFriends);
-      localStorage.setItem('friends', JSON.stringify(updatedFriends));
-      setFriendIdInput('');
+      // Проверяем, существует ли пользователь с таким ID
+      const friendRef = doc(db, 'users', friendIdInput);
+      const friendDoc = await getDoc(friendRef);
+      if (friendDoc.exists()) {
+        const friendData = friendDoc.data();
+        const newFriend = {
+          id: friendIdInput,
+          nickname: friendData.nickname,
+        };
+        const updatedFriends = [...friends, newFriend];
+        setFriends(updatedFriends);
+
+        // Обновляем список друзей в Firestore
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, {
+          friends: arrayUnion(newFriend),
+        });
+
+        setFriendIdInput('');
+      } else {
+        alert('Пользователь с таким ID не найден!');
+      }
     } else {
       alert('Введите корректный ID друга (не свой собственный)!');
     }
   };
 
-  const handlePlayWithFriend = (friend) => {
+  const handlePlayWithFriend = async (friend) => {
     setSelectedFriend(friend);
     setGameState('playing');
     setPlayerChoice(null);
     setFriendChoice(null);
     setResult(null);
     setActiveWindow(null);
+
+    // Создаём пати в Realtime Database
+    const newPartyId = `${userId}_${friend.id}_${Date.now()}`;
+    await set(ref(realtimeDb, `parties/${newPartyId}`), {
+      players: [userId, friend.id],
+      choices: {},
+      status: 'waiting',
+    });
+    setPartyId(newPartyId);
+
+    // Слушаем изменения в пати
+    const partyRef = ref(realtimeDb, `parties/${newPartyId}`);
+    onValue(partyRef, (snapshot) => {
+      const partyData = snapshot.val();
+      if (partyData) {
+        const choices = partyData.choices || {};
+        const opponentId = friend.id;
+        if (choices[userId] && choices[opponentId]) {
+          setPlayerChoice(choices[userId]);
+          setFriendChoice(choices[opponentId]);
+          determineWinner(choices[userId], choices[opponentId]);
+          // Очищаем пати после завершения игры
+          set(ref(realtimeDb, `parties/${newPartyId}`), null);
+          setPartyId(null);
+        }
+      } else {
+        // Пати удалена (например, другой игрок вышел)
+        setResult('Игра отменена: противник вышел.');
+        setGameState(null);
+        setPlayerChoice(null);
+        setFriendChoice(null);
+        setSelectedFriend(null);
+        setPartyId(null);
+      }
+    });
   };
 
   const handleMenuClick = () => {
@@ -177,9 +261,21 @@ function App() {
   };
 
   const handleNicknameChange = () => {
-    if (newNickname.trim()) {
-      setNickname(newNickname);
-      localStorage.setItem('nickname', newNickname);
+    const trimmedNickname = newNickname.trim();
+    if (trimmedNickname.length > 9) {
+      alert('Никнейм не должен превышать 9 символов!');
+      return;
+    }
+    if (!/^[a-zA-Z0-9]+$/.test(trimmedNickname)) {
+      alert('Никнейм может содержать только буквы и цифры!');
+      return;
+    }
+    if (trimmedNickname) {
+      setNickname(trimmedNickname);
+      localStorage.setItem('nickname', trimmedNickname);
+      // Обновляем никнейм в Firestore
+      const userRef = doc(db, 'users', userId);
+      setDoc(userRef, { nickname: trimmedNickname }, { merge: true });
       setNewNickname('');
       setActiveWindow(null);
     } else {
@@ -286,20 +382,6 @@ function App() {
                   <p>{selectedFriend.nickname} выбрал: {friendChoice}</p>
                 ) : (
                   <p>Ожидаем выбор {selectedFriend.nickname}...</p>
-                )}
-                {playerChoice && !friendChoice && (
-                  <div className="friend-choices">
-                    <p>Выберите за {selectedFriend.nickname}:</p>
-                    <button onClick={() => handleChoice('камень', true)}>
-                      <img src={rockImage} alt="Камень" />
-                    </button>
-                    <button onClick={() => handleChoice('ножницы', true)}>
-                      <img src={scissorsImage} alt="Ножницы" />
-                    </button>
-                    <button onClick={() => handleChoice('бумага', true)}>
-                      <img src={paperImage} alt="Бумага" />
-                    </button>
-                  </div>
                 )}
               </div>
             ) : (
